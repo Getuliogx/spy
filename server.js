@@ -43,7 +43,10 @@ async function getFollows(login) {
     const u = j.data && j.data.user;
     if (!u) return { notFound: true };
     user = user || { login: u.login, displayName: u.displayName, avatar: u.profileImageURL };
-    if (!u.follows) throw new Error('A Twitch não devolveu a lista de follows desse usuário.');
+    const errs = (j.errors || []).map(x => x.message).join(' | ');
+    if (!u.follows || u.follows.totalCount == null) {
+      throw new Error('A Twitch não devolveu a lista. Resposta dela: ' + (errs || 'nenhum erro informado, campo follows veio vazio'));
+    }
     total = u.follows.totalCount;
     const edges = u.follows.edges || [];
     for (const e of edges) {
