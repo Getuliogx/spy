@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quem ele segue na Twitch</title>
+<style>
+:root{--bg:#f3f1f8;--panel:#fff;--text:#1d1830;--muted:#6b6584;--line:#ddd8ea;--accent:#6d3fd6;--live:#d6264f}
+@media (prefers-color-scheme:dark){:root{--bg:#120f1c;--panel:#1c1830;--text:#ece8f7;--muted:#9a93b5;--line:#2e2848;--accent:#a98bff;--live:#ff5c7f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 16px 80px}
+h1{font-size:1.9rem;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 24px}
+form{display:flex;gap:8px}
+input,select,button{font:inherit;color:inherit}
+input,select{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 14px}
+input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#nick{flex:1;min-width:0}
+button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:11px 22px;font-weight:600;cursor:pointer}
+@media (prefers-color-scheme:dark){button{color:#120f1c}}
+button:disabled{opacity:.6;cursor:wait}
+#status{margin:20px 0 0;color:var(--muted)}
+#status.err{color:var(--live)}
+#head{display:flex;align-items:center;gap:12px;margin:28px 0 12px}
+#head img{width:48px;height:48px;border-radius:50%}
+#head b{font-size:1.15rem}
+#tools{display:flex;gap:8px;margin-bottom:12px}
+#q{flex:1;min-width:0}
+ul{list-style:none;margin:0;padding:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+li+li{border-top:1px solid var(--line)}
+li a{display:flex;align-items:center;gap:12px;padding:10px 14px;color:inherit;text-decoration:none}
+li a:hover{background:var(--bg)}
+li img{width:38px;height:38px;border-radius:50%;flex:none}
+.n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.d{color:var(--muted);font-size:.85rem;white-space:nowrap}
+.live{color:var(--live);font-weight:600;font-size:.85rem;white-space:nowrap}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <h1>Quem ele segue na Twitch</h1>
+  <p class="sub">Digite o nick de qualquer pessoa e veja todos os canais que ela segue.</p>
+  <form id="f">
+    <input id="nick" placeholder="nick da pessoa" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+    <button id="go">Buscar</button>
+  </form>
+  <p id="status" role="status"></p>
+  <div id="res" hidden>
+    <div id="head"><img id="av" alt=""><div><b id="who"></b><div id="cnt" class="d"></div></div></div>
+    <div id="tools">
+      <input id="q" type="search" placeholder="Filtrar canais">
+      <select id="ord" aria-label="Ordenar">
+        <option value="live">Ao vivo primeiro</option>
+        <option value="name">Nome (A–Z)</option>
+        <option value="recent">Seguiu há menos tempo</option>
+        <option value="old">Seguiu há mais tempo</option>
+      </select>
+    </div>
+    <ul id="list"></ul>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let data = null;
+
+$('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const nick = $('nick').value.trim();
+  if (!nick) return;
+  $('go').disabled = true;
+  $('res').hidden = true;
+  setStatus('Buscando… listas grandes podem levar alguns segundos.');
+  try {
+    const r = await fetch('/api/follows?user=' + encodeURIComponent(nick));
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Erro ao buscar.');
+    data = j;
+    $('av').src = j.user.avatar || '';
+    $('who').textContent = j.user.displayName;
+    $('cnt').textContent = j.total + ' canais seguidos' + (j.truncated ? ' (mostrando os primeiros ' + j.follows.length + ')' : '');
+    $('res').hidden = false;
+    setStatus(j.total === 0 ? 'Essa pessoa não segue ninguém, ou a Twitch não expõe a lista dela.' : '');
+    render();
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    $('go').disabled = false;
+  }
+});
+
+function setStatus(t, bad) { $('status').textContent = t; $('status').className = bad ? 'err' : ''; }
+
+function render() {
+  if (!data) return;
+  const q = $('q').value.trim().toLowerCase();
+  const o = $('ord').value;
+  const arr = data.follows.filter(f => !q || f.name.toLowerCase().includes(q) || f.login.includes(q));
+  arr.sort((a, b) => {
+    if (o === 'name') return a.name.localeCompare(b.name);
+    if (o === 'recent') return b.followedAt.localeCompare(a.followedAt);
+    if (o === 'old') return a.followedAt.localeCompare(b.followedAt);
+    return (b.live - a.live) || (b.viewers - a.viewers) || a.name.localeCompare(b.name);
+  });
+  const ul = $('list');
+  ul.textContent = '';
+  for (const f of arr) {
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.href = 'https://twitch.tv/' + f.login;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    const img = document.createElement('img');
+    img.src = f.avatar || '';
+    img.alt = '';
+    img.loading = 'lazy';
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = f.name;
+    a.append(img, n);
+    if (f.live) {
+      const l = document.createElement('span');
+      l.className = 'live';
+      l.textContent = 'Ao vivo · ' + f.viewers;
+      a.append(l);
+    }
+    const d = document.createElement('span');
+    d.className = 'd';
+    d.textContent = 'desde ' + new Date(f.followedAt).toLocaleDateString('pt-BR');
+    a.append(d);
+    li.append(a);
+    ul.append(li);
+  }
+}
+$('q').addEventListener('input', render);
+$('ord').addEventListener('change', render);
+</script>
+</body>
+</html>
